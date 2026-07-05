@@ -16,8 +16,8 @@ os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
 # הגדרת המודלים (הישן ליצירת הטקסט, והחדש לחיפוש הווקטורי)
 genai_legacy.configure(api_key=GOOGLE_API_KEY)
-llm_model = genai_legacy.GenerativeModel('gemini-2.5-pro')
-flash_model = genai_legacy.GenerativeModel('gemini-2.5-flash')
+llm_model = genai_legacy.GenerativeModel('gemini-3.5-flash')
+flash_model = genai_legacy.GenerativeModel('gemini-3.5-flash')
 google_client = genai.Client(api_key=GOOGLE_API_KEY)
 
 # --- 3. Database Connection ---
