@@ -70,7 +70,7 @@ if user_query := st.chat_input("Enter your medical question here..."):
             
             search_response = index.query(
                 vector=query_vector,
-                top_k=40,
+                top_k=100,
                 include_metadata=True
             )
             
