@@ -1,14 +1,14 @@
 import os
 import re
-import fitz  # PyMuPDF
 import streamlit as st
 import google.generativeai as genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from pinecone import Pinecone
 
+# חובה: חייב להיות פקודת ה-Streamlit הראשונה שרצה!
+st.set_page_config(page_title="OMFS Department AI", page_icon="🦷", layout="centered")
+
 # --- 1. API Setup ---
-# במעבר לשרת ענן, אנחנו נשתמש ב-st.secrets במקום os.environ
-# אבל כרגע, כדי שירוץ אצלך מקומית בבדיקה, נשאיר את זה ככה:
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
 
@@ -19,7 +19,7 @@ genai.configure(api_key=GOOGLE_API_KEY)
 llm_model = genai.GenerativeModel('gemini-3.5-flash')
 flash_model = genai.GenerativeModel('gemini-3.5-flash')
 
-# --- 2. Database Connection (Pinecone Cloud) ---
+# --- 2. Database Connection ---
 @st.cache_resource
 def load_database():
     pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -30,7 +30,6 @@ def load_database():
 index, embeddings = load_database()
 
 # --- 3. UI Design ---
-st.set_page_config(page_title="OMFS Department AI", page_icon="🦷", layout="centered")
 st.title("🦷 OMFS Department Knowledge Base")
 st.markdown("Ask any medical question. The AI will provide answers directly from our Cloud Knowledge Base.")
 
@@ -51,7 +50,6 @@ if user_query := st.chat_input("Enter your medical question here..."):
     with st.chat_message("assistant"):
         with st.status("🔍 Processing request...", expanded=True) as status:
             
-            # הרחבת שאילתה - עוזר למצוא תוצאות רפואיות מדויקות יותר
             st.write("🧠 Optimizing search with medical synonyms...")
             expansion_prompt = f"""
             You are an expert OMFS surgeon. The user wants to search a medical textbook with this query: "{user_query}"
@@ -63,10 +61,8 @@ if user_query := st.chat_input("Enter your medical question here..."):
             
             st.write(f"📚 Searching Pinecone cloud database for: {expanded_query}")
             
-            # הפיכת השאילתה לוקטור וחיפוש ב-Pinecone
             query_vector = embeddings.embed_query(expanded_query)
             
-            # מבקשים 15 תוצאות מ-Pinecone
             search_response = index.query(
                 vector=query_vector,
                 top_k=15,
@@ -75,14 +71,12 @@ if user_query := st.chat_input("Enter your medical question here..."):
             
             context_parts = []
             
-            # עכשיו אנחנו קוראים את התוצאות מהפורמט של Pinecone
             for match in search_response['matches']:
                 metadata = match['metadata']
                 text = metadata.get('text', '')
                 source = metadata.get('source', 'Unknown Source')
                 page_num = metadata.get('page', 0)
                 
-                # חילוץ השם החכם אם קיים
                 title_match = re.search(r"title:\s*(.+)", text)
                 smart_title = title_match.group(1).strip() if title_match else source
                 
