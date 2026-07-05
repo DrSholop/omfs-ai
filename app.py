@@ -1,35 +1,35 @@
 import os
 import re
 import streamlit as st
-import google.generativeai as genai
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+import google.generativeai as genai_legacy
+from google import genai
 from pinecone import Pinecone
 
-# חובה: חייב להיות פקודת ה-Streamlit הראשונה שרצה!
+# --- 1. UI Setup (חייב להיות ראשון!) ---
 st.set_page_config(page_title="OMFS Department AI", page_icon="🦷", layout="centered")
 
-# --- 1. API Setup ---
+# --- 2. API Setup ---
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
 
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
-os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
 
-genai.configure(api_key=GOOGLE_API_KEY)
-llm_model = genai.GenerativeModel('gemini-3.5-flash')
-flash_model = genai.GenerativeModel('gemini-3.5-flash')
+# הגדרת המודלים (הישן ליצירת הטקסט, והחדש לחיפוש הווקטורי)
+genai_legacy.configure(api_key=GOOGLE_API_KEY)
+llm_model = genai_legacy.GenerativeModel('gemini-2.5-pro')
+flash_model = genai_legacy.GenerativeModel('gemini-2.5-flash')
+google_client = genai.Client(api_key=GOOGLE_API_KEY)
 
-# --- 2. Database Connection ---
+# --- 3. Database Connection ---
 @st.cache_resource
 def load_database():
     pc = Pinecone(api_key=PINECONE_API_KEY)
     index = pc.Index("omfs-kb")
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
-    return index, embeddings
+    return index
 
-index, embeddings = load_database()
+index = load_database()
 
-# --- 3. UI Design ---
+# --- 4. UI Design ---
 st.title("🦷 OMFS Department Knowledge Base")
 st.markdown("Ask any medical question. The AI will provide answers directly from our Cloud Knowledge Base.")
 
@@ -40,13 +40,13 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# --- 4. User Interaction ---
+# --- 5. User Interaction ---
 if user_query := st.chat_input("Enter your medical question here..."):
     st.session_state.messages.append({"role": "user", "content": user_query})
     with st.chat_message("user"):
         st.markdown(user_query)
 
-    # --- 5. Processing ---
+    # --- 6. Processing ---
     with st.chat_message("assistant"):
         with st.status("🔍 Processing request...", expanded=True) as status:
             
@@ -61,7 +61,12 @@ if user_query := st.chat_input("Enter your medical question here..."):
             
             st.write(f"📚 Searching Pinecone cloud database for: {expanded_query}")
             
-            query_vector = embeddings.embed_query(expanded_query)
+            # --- השינוי הקריטי: חיפוש באמצעות המודל החדש! ---
+            response = google_client.models.embed_content(
+                model="gemini-embedding-001",
+                contents=expanded_query
+            )
+            query_vector = response.embeddings[0].values
             
             search_response = index.query(
                 vector=query_vector,
@@ -70,6 +75,9 @@ if user_query := st.chat_input("Enter your medical question here..."):
             )
             
             context_parts = []
+            
+            # ❗ שים כאן את ה-ID האמיתי של התיקייה בדרייב שלך ❗
+            FOLDER_ID = "1fGrnIlCfLqXxnZF-EsFKmFNq6SLeDPri" 
             
             for match in search_response['matches']:
                 metadata = match['metadata']
@@ -80,7 +88,9 @@ if user_query := st.chat_input("Enter your medical question here..."):
                 title_match = re.search(r"title:\s*(.+)", text)
                 smart_title = title_match.group(1).strip() if title_match else source
                 
-                context_parts.append(f"--- SOURCE: {smart_title} (Internal Page {int(page_num) + 1}) ---\n{text}")
+                drive_link = f"https://drive.google.com/drive/u/0/search?q=parent:{FOLDER_ID}%20and%20name:'{source}'"
+
+                context_parts.append(f"--- SOURCE: [{smart_title}]({drive_link}) (Internal Page {int(page_num) + 1}) ---\n{text}")
             
             context = "\n\n".join(context_parts)
             
@@ -101,12 +111,12 @@ if user_query := st.chat_input("Enter your medical question here..."):
             Original User Question: {user_query}
             """
             
-            response = llm_model.generate_content(prompt)
+            final_response = llm_model.generate_content(prompt)
             status.update(label="✅ Answer ready", state="complete", expanded=False)
         
-        st.markdown(response.text)
+        st.markdown(final_response.text)
         
         st.session_state.messages.append({
             "role": "assistant", 
-            "content": response.text
+            "content": final_response.text
         })
